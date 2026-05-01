@@ -69,10 +69,16 @@ def extract_tau_return(t, A, pulse_onsets, G, pulse_duration=0.200, dt=0.001, A_
         
         # Initial guesses
         epsilon_guess = A_fit[0] - A_star
-        p0 = [epsilon_guess, tau_pred]
+        # Ensure guess is strictly within bounds (specifically if A_fit[0] is exactly A_star due to floating point)
+        epsilon_guess = min(epsilon_guess, -1e-5)
+        epsilon_guess = max(epsilon_guess, -A_star + 1e-4)
+        tau_guess = min(max(tau_pred, 1e-4), 59.9)
+        
+        p0 = [epsilon_guess, tau_guess]
         
         # Bounds: epsilon must be negative (constricted), tau in (0, 60] seconds
-        bounds = ([-A_star, 1e-5], [0.0, 60.0])
+        # Relaxed upper bound of epsilon slightly to 0.01 to prevent strict boundary errors
+        bounds = ([-A_star, 1e-5], [0.01, 60.0])
         
         try:
             # Note: We pass A_star dynamically using a lambda to keep the signature clean
@@ -128,7 +134,7 @@ def detect_hippus(t, A, fs=1000.0, threshold_power=0.1):
     
     # Integrate power in the 1 to 3 Hz band
     band_mask = (freqs >= 1.0) & (freqs <= 3.0)
-    band_power = np.trapz(psd[band_mask], freqs[band_mask])
+    band_power = np.trapezoid(psd[band_mask], freqs[band_mask])
     
     is_hippus = bool(band_power > threshold_power)
     

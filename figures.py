@@ -5,7 +5,7 @@ import matplotlib.pyplot as plt
 import seaborn as sns
 from scipy.signal import welch
 
-# --- Styling Configuration for Academic Paper ---
+
 plt.style.use('default')
 plt.rcParams.update({
     'font.family': 'serif',
@@ -181,7 +181,7 @@ def plot_figure_4(output_dir="output"):
         if len(df_sig) == 0:
             continue
             
-        label_str = r'$\sigma = ' + str(int(sigma*100)) + '\%$'
+        label_str = rf'$\sigma = {int(sigma*100)}\%$'
         
         # Plot mean
         ax.plot(df_sig['G'], df_sig['tau_return_mean'], 
