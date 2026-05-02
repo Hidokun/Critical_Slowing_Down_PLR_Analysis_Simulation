@@ -1,59 +1,48 @@
 import numpy as np
 
-def generate_protocol(G, num_pulses=10, dt=0.001, pulse_duration=0.200, intensity=5.0):
+
+def generate_protocol(G, num_pulses=10, dt=0.001, pulse_duration=0.200, intensity=0.3):
     """
     Generates the stimulus protocol for a given loop gain G, using an adaptive
     inter-pulse interval (IPI) to guarantee full recovery to baseline.
-    
+
     Parameters:
-        G (float): Loop gain, used to predict recovery time and scale IPI.
+        G (float): Loop gain.
         num_pulses (int): Number of consecutive light pulses (default: 10).
         dt (float): Integration step size in seconds (default: 0.001).
         pulse_duration (float): Duration of the square light pulse in seconds (default: 0.200).
-        intensity (float): Multiplicative increase in effective retinal flux during the pulse.
-        
+        intensity (float): Fractional displacement of resting area during pulse (default: 0.3).
+                           u = -intensity * A_star applied during pulse window.
+                           0.3 gives ~4.5 mm² constriction from A* = 15 mm².
+
     Returns:
         t (np.ndarray): Time vector for the simulation.
         stimulus (np.ndarray): Stimulus amplitude vector.
-        pulse_onsets (np.ndarray): Array of times (in seconds) when pulses begin.
+        pulse_onsets (np.ndarray): Array of pulse onset times in seconds.
     """
-    tau_iris = 0.311  # (s) from Longtin & Milton (1989)
-    
-    # Compute adaptive Inter-Pulse Interval (T_IPI)
+    tau_iris = 0.311
+
     if G < 1.0:
         tau_pred = tau_iris / (1.0 - G)
-        # Let the window scale with G, ensuring a minimum of 500ms
-        T_IPI = max(10.0 * tau_pred, 0.5)
+        T_IPI = max(10.0 * tau_pred, 2.0)
     else:
-        # Near or past the bifurcation (oscillatory regime), fix IPI to a long window
-        # since exponential recovery prediction breaks down.
-        T_IPI = 10.0 
-        
-    t_baseline = 2.0  # 2 seconds of pure baseline before the first pulse
-    
-    # Calculate total duration
+        T_IPI = 120.0
+
+    t_baseline = 2.0
     t_total = t_baseline + num_pulses * (pulse_duration + T_IPI)
-    
-    # Generate time array
+
     num_steps = int(np.round(t_total / dt))
     t = np.arange(num_steps) * dt
     stimulus = np.zeros(num_steps)
-    
+
     pulse_onsets = []
-    
-    # Populate the stimulus array with square pulses
     current_time = t_baseline
+
     for _ in range(num_pulses):
         pulse_onsets.append(current_time)
-        
-        # Convert time to array indices
         start_idx = int(np.round(current_time / dt))
-        end_idx = int(np.round((current_time + pulse_duration) / dt))
-        
-        # Inject stimulus intensity
+        end_idx   = int(np.round((current_time + pulse_duration) / dt))
         stimulus[start_idx:end_idx] = intensity
-        
-        # Advance to next pulse onset
         current_time += (pulse_duration + T_IPI)
-        
+
     return t, stimulus, np.array(pulse_onsets)

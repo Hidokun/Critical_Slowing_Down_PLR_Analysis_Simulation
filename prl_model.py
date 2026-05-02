@@ -2,99 +2,83 @@ import numpy as np
 
 class PLRModel:
     """
-    Pupillary Light Reflex model based on the linearised Longtin-Milton DDE.
+    Nonlinear Longtin-Milton DDE model of the Pupillary Light Reflex.
 
-    Governing equation (deviation form):
-        tau_iris * da/dt = -a(t) + G * a(t - delta) + u(t)
+    Governing equation:
+        tau_iris * dA/dt = -A(t) + A_star + gamma * [ f(Phi(t - delta)) - f(A_star) ]
 
-    where a(t) = A(t) - A_star is the deviation from resting pupil area,
-    G is the dimensionless loop gain, delta is the neural conduction delay,
-    and u(t) is the stimulus input (negative = constriction).
+    where Phi(t) = A(t) * (1 + stimulus_val) is the retinal light flux,
+    and f(Phi) is the Hill function representing the negative feedback:
+        f(Phi) = c * theta^n / (theta^n + Phi^n)
 
-    Characteristic equation: tau_iris * lambda + 1 - G * exp(-lambda * delta) = 0
-    Bifurcation at G = 1 (lambda = 0 is a solution).
-    Critical slowing down: tau_return = tau_iris / (1 - G) as G -> 1.
+    The scaling factor gamma is chosen such that the linearized local loop gain
+    at equilibrium is exactly G:
+        gamma = G / |f'(A_star)|
 
-    The Hopf bifurcation frequency at G = 1:
-        cos(omega_c * delta) = -1  =>  omega_c = pi / delta
-        f_c = 1 / (2 * delta) ~= 1.67 Hz for delta = 0.300 s
-
-    Stimulus implementation:
-        A light pulse of amplitude S displaces a(t) by -S * A_star
-        (constriction: area decreases below A_star during pulse).
+    This ensures the model mathematically conforms to the Lambert W linear theory
+    for small perturbations, while saturating physically during large fluctuations.
     """
 
     def __init__(self, G, noise_sigma=0.0, dt=0.001):
-        # Fixed physiological parameters (Longtin & Milton 1989)
-        self.dt         = dt
-        self.delta      = 0.300    # Neural conduction delay (s)
-        self.tau_iris   = 0.311    # Iris time constant (s)
-        self.A_star     = 15.0     # Resting pupil area (mm^2)
+        self.dt          = dt
+        self.delta       = 0.300
+        self.tau_iris    = 0.311
+        self.A_star      = 15.0
 
-        # Gain and noise
         self.G           = G
         self.noise_sigma = noise_sigma
 
-        # History buffer for delayed state
+        # Hill equation parameters
+        self.n     = 4.0
+        self.theta = 15.0
+        self.c     = 2.0 * self.A_star
+
+        # Derivative of f at equilibrium
+        # f'(A) = - c * n * theta^n * A^(n-1) / (theta^n + A^n)^2
+        f_prime = -self.c * self.n * (self.theta**self.n) * (self.A_star**(self.n - 1)) / \
+                  ((self.theta**self.n + self.A_star**self.n)**2)
+
+        self.gamma = self.G / abs(f_prime)
+        self.f_eq  = self._hill_function(self.A_star)
+
         self.N_delay        = int(round(self.delta / self.dt))
-        self.history_buffer = np.zeros(self.N_delay)   # deviations, init at 0
+        self.history_buffer = np.full(self.N_delay, self.A_star)
         self.buffer_idx     = 0
 
-        # State variable: deviation from equilibrium
-        self.a_current = 0.0
+        self.A_current = self.A_star
 
-    @property
-    def A_current(self):
-        """Absolute pupil area (mm^2)."""
-        return self.A_star + self.a_current
+    def _hill_function(self, Phi):
+        return self.c * (self.theta**self.n) / (self.theta**self.n + Phi**self.n)
 
     def reset(self):
-        """Resets model to equilibrium."""
-        self.history_buffer.fill(0.0)
+        self.history_buffer.fill(self.A_star)
         self.buffer_idx = 0
-        self.a_current  = 0.0
+        self.A_current  = self.A_star
 
     def step(self, stimulus_val):
-        """
-        Advances DDE by one time step dt.
+        A_delayed = self.history_buffer[self.buffer_idx]
 
-        stimulus_val: float
-            Fractional constriction drive. During a pulse, stimulus_val > 0
-            produces a negative displacement: u = -stimulus_val * A_star.
-            Between pulses, stimulus_val = 0 and u = 0.
-
-        Returns absolute pupil area A(t) = A_star + a(t).
-        """
-        # Retrieve delayed deviation from history buffer
-        a_delayed = self.history_buffer[self.buffer_idx]
-
-        # Additive Gaussian noise on delayed state
         if self.noise_sigma > 0:
-            a_delayed += self.noise_sigma * self.A_star * np.random.randn()
+            A_delayed += self.noise_sigma * self.A_star * np.random.randn()
+            A_delayed = max(A_delayed, 0.1)  # Area cannot be negative
 
-        # Stimulus input: light pulse constricts pupil (negative displacement)
-        u = -stimulus_val * self.A_star
+        Phi_delayed = A_delayed * (1.0 + stimulus_val)
 
-        # Linearised DDE: tau * da/dt = -a(t) + G * a(t-delta) + u(t)
-        da_dt = (1.0 / self.tau_iris) * (
-            -self.a_current
-            + self.G * a_delayed
-            + u
-        )
+        feedback = self.gamma * (self._hill_function(Phi_delayed) - self.f_eq)
 
-        self.a_current += da_dt * self.dt
+        dA_dt = (1.0 / self.tau_iris) * (-self.A_current + self.A_star + feedback)
 
-        # Write current deviation into history buffer
-        self.history_buffer[self.buffer_idx] = self.a_current
+        self.A_current += dA_dt * self.dt
+
+        # Ensure physical boundaries
+        self.A_current = max(self.A_current, 0.1)
+
+        self.history_buffer[self.buffer_idx] = self.A_current
         self.buffer_idx = (self.buffer_idx + 1) % self.N_delay
 
         return self.A_current
 
     def simulate(self, stimulus_array):
-        """
-        Simulates model over a stimulus array.
-        Returns absolute pupil area array of the same length.
-        """
         areas = np.zeros(len(stimulus_array))
         for i, stim in enumerate(stimulus_array):
             areas[i] = self.step(stim)

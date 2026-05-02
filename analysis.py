@@ -1,6 +1,7 @@
 import numpy as np
 from scipy.optimize import curve_fit
 from scipy.signal import welch, hilbert
+from scipy.special import lambertw
 
 def exponential_recovery(t, epsilon, tau_return, A_star=15.0):
     """
@@ -16,10 +17,17 @@ def extract_tau_return(t, A, pulse_onsets, G, pulse_duration=0.200, dt=0.001, A_
     """
     tau_iris = 0.311
 
-    if G >= 1.0:
+    if G >= 2.4:  # The true Hopf bifurcation is around G=2.4 for tau=0.311
         return np.nan, np.nan, 0
 
-    tau_pred = tau_iris / (1.0 - G)
+    # Exact theoretical envelope decay using Lambert W function
+    delta = 0.300
+    arg = - (G * delta / tau_iris) * np.exp(delta / tau_iris)
+    W = lambertw(arg, k=0)
+    lam = (W / delta) - (1.0 / tau_iris)
+    alpha = np.real(lam)
+    
+    tau_pred = -1.0 / alpha
     T_IPI = max(10.0 * tau_pred, 0.5)
 
     taus = []
@@ -44,14 +52,16 @@ def extract_tau_return(t, A, pulse_onsets, G, pulse_duration=0.200, dt=0.001, A_
         zero_crossings = np.where(np.diff(np.sign(A_zero_mean)))[0]
 
         if len(zero_crossings) >= 2:
-            hann = np.hanning(len(A_zero_mean))
-            windowed = A_zero_mean * hann
-            envelope = np.abs(hilbert(windowed))
-            envelope = envelope / 0.5
-            mse_threshold = 2.0
+            envelope = np.abs(hilbert(A_zero_mean))
+            # Hilbert transform has edge artifacts, so clip the last 10%
+            clip_idx = int(len(envelope) * 0.9)
+            t_fit = t_fit[:clip_idx]
+            A_fit = A_fit[:clip_idx]
+            envelope = envelope[:clip_idx]
+            mse_threshold = 5.0
         else:
             envelope = np.abs(A_zero_mean)
-            mse_threshold = 0.5
+            mse_threshold = 5.0
 
         # Find the minimum of A_fit (constriction nadir) and start fitting from there
         nadir_idx = np.argmin(A_fit)

@@ -4,6 +4,7 @@ import numpy as np
 import matplotlib.pyplot as plt
 import seaborn as sns
 from scipy.signal import welch
+from scipy.special import lambertw
 
 
 plt.style.use('default')
@@ -46,10 +47,10 @@ def plot_figure_1(output_dir="output"):
     ax.axhline(15.0, color='k', linestyle='--', linewidth=1, alpha=0.5, label='Resting Area $A^*$')
     
     # Text annotation for the degenerate trace
-    ax.text(0.3, 11.5, "Degenerate return\n($\tau_{return} < 200$ ms)", 
+    '''ax.text(0.3, 11.5, "Degenerate return\n($\tau_{return} < 200$ ms)", 
             color=colors[0], fontsize=10, va='center')
-    
-    ax.set_xlim(-0.5, 6.0)
+    '''
+    ax.set_xlim(-0.5, 12.0)
     ax.set_ylim(10.0, 15.5)
     ax.set_xlabel("Time from stimulus onset (s)")
     ax.set_ylabel(r"Pupil Area ($mm^2$)")
@@ -75,30 +76,40 @@ def plot_figure_2(output_dir="output"):
     
     fig, ax = plt.subplots(figsize=(8, 5))
     
-    # Theoretical curve (linearised approximation)
-    G_theory = np.linspace(0.1, 0.99, 100)
+    # Theoretical curve (Exact DDE via Lambert W)
+    G_theory = np.linspace(0.1, 2.38, 200)
     tau_iris = 0.311
-    tau_theory = tau_iris / (1 - G_theory)
+    delta = 0.300
+    
+    tau_theory = np.zeros_like(G_theory)
+    for i, g_val in enumerate(G_theory):
+        arg = - (g_val * delta / tau_iris) * np.exp(delta / tau_iris)
+        W = lambertw(arg, k=0)
+        lam = (W / delta) - (1.0 / tau_iris)
+        tau_theory[i] = -1.0 / np.real(lam)
     
     ax.plot(G_theory, tau_theory, 'k--', linewidth=1.5, 
-            label=r'Theoretical: $\tau_{return} \approx \tau_{iris}/(1-G)$')
+            label=r'Theoretical (Lambert W Exact DDE)')
     
-    # Simulated points (full nonlinear DDE)
+    # Simulated points (full linear DDE)
     ax.scatter(df_clean['G'], df_clean['tau_return_mean'], 
                color='#d95f02', s=40, zorder=5, label='Simulated DDE (Zero Noise)')
     
     # Validity shading
     degen_bound = 0.36
-    ax.axvspan(degen_bound, 1.0, color='#4daf4a', alpha=0.08, label='Valid Measurement Regime')
+    hopf_bound = 2.33
+    ax.axvspan(degen_bound, hopf_bound, color='#4daf4a', alpha=0.08, label='Valid Measurement Regime')
     ax.axvline(degen_bound, color='#e41a1c', linestyle=':', alpha=0.8, 
-               label=r'Degeneration Bound ($\tau_{return} = 200$ ms)')
+               label=r'Node-Focus Transition ($\tau_{return}$ complex)')
+    ax.axvline(hopf_bound, color='#984ea3', linestyle='-.', alpha=0.8, 
+               label=r'Hopf Bifurcation ($G \approx 2.33$)')
     
     ax.set_yscale('log')
-    ax.set_xlim(0.1, 1.0)
-    ax.set_ylim(0.1, 50.0)
+    ax.set_xlim(0.1, 2.5)
+    ax.set_ylim(0.1, 100.0)
     ax.set_xlabel("Loop Gain ($G$)")
-    ax.set_ylabel(r"Recovery Time Constant $\tau_{return}$ (s)")
-    ax.set_title("Critical Slowing Down: Simulation vs Theory")
+    ax.set_ylabel(r"Envelope Recovery Time Constant $\tau_{return}$ (s)")
+    ax.set_title("Critical Slowing Down: Exact DDE Theory vs Simulation")
     ax.legend(loc='upper left')
     ax.grid(True, which="major", ls="-", alpha=0.2)
     ax.grid(True, which="minor", ls=":", alpha=0.1)
@@ -139,9 +150,9 @@ def plot_figure_3(output_dir="output"):
         
     # Annotate clinical and theoretical bounds
     ax.axvspan(1.0, 3.0, color='gray', alpha=0.15, label='Clinical Hippus Band (1-3 Hz)')
-    f_c = 1.0 / (2.0 * 0.300) # 1 / (2*delta)
+    f_c = 1.07 # True Hopf frequency derived from exact DDE roots for tau=0.311
     ax.axvline(f_c, color='k', linestyle='--', linewidth=1.5, 
-               label=r'Theoretical Hopf Freq ($f_c = 1.67$ Hz)')
+               label=r'Exact DDE Hopf Freq ($f_c \approx 1.07$ Hz)')
     
     ax.set_xlim(0.1, 5.0)
     ax.set_yscale('log')
@@ -194,9 +205,9 @@ def plot_figure_4(output_dir="output"):
                         color=colors[idx], alpha=0.15)
                         
     ax.set_yscale('log')
-    # Focus the x-axis on the valid measurement regime
-    ax.set_xlim(0.36, 0.95)
-    ax.set_ylim(0.2, 30.0)
+    # Focus the x-axis on the valid measurement regime up to the true bifurcation
+    ax.set_xlim(0.36, 2.35)
+    ax.set_ylim(0.2, 50.0)
     ax.set_xlabel("Loop Gain ($G$)")
     ax.set_ylabel(r"Estimated $\tau_{return}$ (s) $\pm 1$ SD")
     ax.set_title("Measurement Robustness Under Retinal Flux Noise")
