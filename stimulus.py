@@ -22,8 +22,8 @@ def generate_protocol(G, num_pulses=10, dt=0.001, pulse_duration=0.200, intensit
     # Compute adaptive Inter-Pulse Interval (T_IPI)
     if G < 1.0:
         tau_pred = tau_iris / (1.0 - G)
-        # Floor the IPI at 2.0 seconds for low G, otherwise 10x predicted tau
-        T_IPI = max(2.0, 10.0 * tau_pred)
+        # Let the window scale with G, ensuring a minimum of 500ms
+        T_IPI = max(10.0 * tau_pred, 0.5)
     else:
         # Near or past the bifurcation (oscillatory regime), fix IPI to a long window
         # since exponential recovery prediction breaks down.

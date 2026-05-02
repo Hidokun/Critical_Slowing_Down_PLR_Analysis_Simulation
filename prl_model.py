@@ -12,9 +12,9 @@ class PLRModel:
         self.delta = 0.300           # Neural conduction delay (s)
         self.tau_iris = 0.311        # Iris time constant (s)
         self.n = 3                   # Hill coefficient
-        self.theta = 50.0            # Half-saturation constant (mm^2)
+        self.theta = 50.0        # Half-saturation constant (mm^2)
         self.c = 200.0               # Maximum sphincter area (mm^2)
-        self.A_star = 15.0           # Resting pupil area (mm^2)
+        self.A_star = 50.0           # Resting pupil area (mm^2)
         
         self.G = G
         self.noise_sigma = noise_sigma

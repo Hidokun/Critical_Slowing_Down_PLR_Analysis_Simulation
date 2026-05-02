@@ -59,17 +59,25 @@ def generate_trace_examples(output_dir="output"):
     trace_data = []
     
     for G in G_examples:
-        # Generate exactly 1 pulse with a long enough baseline to settle
         t, stimulus, pulse_onsets = generate_protocol(G, num_pulses=1)
-        model = PLRModel(G, noise_sigma=0.0) # Zero noise for clean qualitative overlay
+        model = PLRModel(G, noise_sigma=0.0)
         A = model.simulate(stimulus)
-        
-        # Shift time so stimulus onset is at t=0
+
+        # --- TEMPORARY DIAGNOSTIC ---
+        if G in G_examples:
+            idx_start = int((pulse_onsets[0] + 0.200) / 0.001)
+            A_seg = A[idx_start:]
+            t_seg = t[idx_start:] - t[idx_start]
+            within_2pct = np.where(np.abs(A_seg - 15.0) < 0.30)[0]
+            if len(within_2pct) > 0:
+                print(f"G={G:.2f}  T_return(2%)={t_seg[within_2pct[0]]:.3f}s")
+            else:
+                print(f"G={G:.2f}  never returned within 2%")
+        # --- END DIAGNOSTIC ---
+
         t_shifted = t - pulse_onsets[0]
-        
-        # Only keep data from -1.0s to 10.0s (or max available)
         valid_idx = (t_shifted >= -1.0) & (t_shifted <= 10.0)
-        
+
         for ti, ai in zip(t_shifted[valid_idx], A[valid_idx]):
             trace_data.append({"G": G, "time": ti, "Area": ai})
             
