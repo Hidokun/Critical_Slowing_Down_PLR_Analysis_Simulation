@@ -1,6 +1,6 @@
 import numpy as np
 from scipy.optimize import curve_fit
-from scipy.signal import welch
+from scipy.signal import welch, hilbert
 
 def exponential_recovery(t, epsilon, tau_return, A_star=15.0):
     """
@@ -50,48 +50,42 @@ def extract_tau_return(t, A, pulse_onsets, G, pulse_duration=0.200, dt=0.001, A_
         # Ensure we don't index out of bounds
         idx_max_end = min(idx_max_end, len(t) - 1)
         
-        # Find when A(t) returns to within 2% of A* (i.e., A(t) >= 0.98 * A*)
-        # Since it's dilating, it approaches A* from below.
-        window_A = A[idx_offset:idx_max_end]
-        recovery_indices = np.where(window_A >= 0.98 * A_star)[0]
-        
-        if len(recovery_indices) > 0:
-            idx_end = idx_offset + recovery_indices[0]
-        else:
-            idx_end = idx_max_end
+        # Use the full window, no premature truncation
+        idx_end = idx_max_end
             
-        # If the window is too short (e.g., re-dilation finished during the pulse)
+        # If the window is too short
         if (idx_end - idx_offset) * dt < 0.050:
             continue
             
         t_fit = t[idx_offset:idx_end] - t[idx_offset]  # Shift time to 0
         A_fit = A[idx_offset:idx_end]
         
+        # Hilbert Envelope Extraction
+        A_zero_mean = A_fit - A_star
+        envelope = np.abs(hilbert(A_zero_mean))
+        
         # Initial guesses
-        epsilon_guess = A_fit[0] - A_star
-        # Ensure guess is strictly within bounds (specifically if A_fit[0] is exactly A_star due to floating point)
-        epsilon_guess = min(epsilon_guess, -1e-5)
-        epsilon_guess = max(epsilon_guess, -A_star + 1e-4)
+        epsilon_guess = envelope[0]
+        epsilon_guess = max(epsilon_guess, 1e-5)
         tau_guess = min(max(tau_pred, 1e-4), 59.9)
         
         p0 = [epsilon_guess, tau_guess]
         
-        # Bounds: epsilon must be negative (constricted), tau in (0, 60] seconds
-        # Relaxed upper bound of epsilon slightly to 0.01 to prevent strict boundary errors
-        bounds = ([-A_star, 1e-5], [0.01, 60.0])
+        # Bounds: epsilon strictly positive (amplitude), tau in (0, 60] seconds
+        bounds = ([1e-5, 1e-5], [np.inf, 60.0])
         
         try:
-            # Note: We pass A_star dynamically using a lambda to keep the signature clean
-            fit_func = lambda t_val, eps, tau: exponential_recovery(t_val, eps, tau, A_star)
-            popt, pcov = curve_fit(fit_func, t_fit, A_fit, p0=p0, bounds=bounds)
+            # Fit exponential envelope: eps * exp(-t / tau)
+            fit_func = lambda t_val, eps, tau: eps * np.exp(-t_val / tau)
+            popt, pcov = curve_fit(fit_func, t_fit, envelope, p0=p0, bounds=bounds)
             
             eps_fit, tau_fit = popt
             
-            # Calculate residual (Mean Squared Error)
-            A_pred = fit_func(t_fit, eps_fit, tau_fit)
-            mse = np.mean((A_fit - A_pred)**2)
+            # Calculate residual (Mean Squared Error) against the envelope
+            env_pred = fit_func(t_fit, eps_fit, tau_fit)
+            mse = np.mean((envelope - env_pred)**2)
             
-            # Exclusion threshold: if fit is excessively poor
+            # Exclusion threshold: since envelope is smooth, 0.5 is mathematically robust
             if mse < 0.5:  
                 taus.append(tau_fit)
                 residuals.append(mse)
