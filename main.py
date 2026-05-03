@@ -93,7 +93,7 @@ def generate_trace_examples(output_dir="output"):
     t_hippus = np.arange(0, 60.0, dt)
     zero_stimulus = np.zeros_like(t_hippus)
     
-    for G in [0.50, 0.97]:
+    for G in [0.50, 0.97*2.318]:
         model = PLRModel(G, noise_sigma=0.05)
         A = model.simulate(zero_stimulus)
         

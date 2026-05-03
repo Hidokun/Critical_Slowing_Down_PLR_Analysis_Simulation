@@ -17,7 +17,7 @@ def extract_tau_return(t, A, pulse_onsets, G, pulse_duration=0.200, dt=0.001, A_
     """
     tau_iris = 0.311
 
-    if G >= 2.4:  # The true Hopf bifurcation is around G=2.4 for tau=0.311
+    if G >= 2.318:  # The true Hopf bifurcation is around G=2.318 for tau=0.311
         return np.nan, np.nan, 0
 
     # Exact theoretical envelope decay using Lambert W function
@@ -28,7 +28,7 @@ def extract_tau_return(t, A, pulse_onsets, G, pulse_duration=0.200, dt=0.001, A_
     alpha = np.real(lam)
     
     tau_pred = -1.0 / alpha
-    T_IPI = max(10.0 * tau_pred, 0.5)
+    T_IPI = max(5.0 * tau_pred, 0.5)
 
     taus = []
     residuals = []
@@ -58,10 +58,10 @@ def extract_tau_return(t, A, pulse_onsets, G, pulse_duration=0.200, dt=0.001, A_
             t_fit = t_fit[:clip_idx]
             A_fit = A_fit[:clip_idx]
             envelope = envelope[:clip_idx]
-            mse_threshold = 5.0
+            mse_threshold = 0.1
         else:
             envelope = np.abs(A_zero_mean)
-            mse_threshold = 5.0
+            mse_threshold = 0.1
 
         # Find the minimum of A_fit (constriction nadir) and start fitting from there
         nadir_idx = np.argmin(A_fit)

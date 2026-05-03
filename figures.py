@@ -97,12 +97,12 @@ def plot_figure_2(output_dir="output"):
     
     # Validity shading
     degen_bound = 0.36
-    hopf_bound = 2.33
+    hopf_bound = 2.318
     ax.axvspan(degen_bound, hopf_bound, color='#4daf4a', alpha=0.08, label='Valid Measurement Regime')
     ax.axvline(degen_bound, color='#e41a1c', linestyle=':', alpha=0.8, 
                label=r'Node-Focus Transition ($\tau_{return}$ complex)')
     ax.axvline(hopf_bound, color='#984ea3', linestyle='-.', alpha=0.8, 
-               label=r'Hopf Bifurcation ($G \approx 2.33$)')
+               label=r'Hopf Bifurcation ($G \approx 2.318$)')
     
     ax.set_yscale('log')
     ax.set_xlim(0.1, 2.5)
@@ -119,7 +119,7 @@ def plot_figure_2(output_dir="output"):
 
 def plot_figure_3(output_dir="output"):
     """
-    Figure 3: Power spectrum at G=0.50 vs G=0.97.
+    Figure 3: Power spectrum at G=0.50-G=0.97*2.318.
     Shows the emergence of the 1/(2*delta) spectral peak near bifurcation.
     """
     hippus_path = os.path.join(output_dir, "fig3_hippus_traces.csv")
@@ -130,10 +130,11 @@ def plot_figure_3(output_dir="output"):
     df = pd.read_csv(hippus_path)
     
     fig, ax = plt.subplots(figsize=(8, 5))
-    colors = {'0.5': '#377eb8', '0.97': '#e41a1c'}
-    labels = {'0.5': 'G = 0.50 (Stable state)', '0.97': 'G = 0.97 (Near bifurcation)'}
+    G_near = 0.97 * 2.318
+    colors = {str(0.5): '#377eb8', str(G_near): '#e41a1c'}
+    labels = {str(0.5): 'G = 0.50 (Stable state)', str(G_near): r'G $\approx$ 2.25 (Near bifurcation)'}
     
-    for G_val in [0.50, 0.97]:
+    for G_val in [0.50, 0.97*2.318]:
         # Exact floating point matching can be tricky, cast to string key
         data = df[np.isclose(df['G'], G_val)]['Area'].values
         if len(data) == 0:
@@ -207,7 +208,7 @@ def plot_figure_4(output_dir="output"):
     ax.set_yscale('log')
     # Focus the x-axis on the valid measurement regime up to the true bifurcation
     ax.set_xlim(0.36, 2.35)
-    ax.set_ylim(0.2, 50.0)
+    ax.set_ylim(0.1, 100.0)
     ax.set_xlabel("Loop Gain ($G$)")
     ax.set_ylabel(r"Estimated $\tau_{return}$ (s) $\pm 1$ SD")
     ax.set_title("Measurement Robustness Under Retinal Flux Noise")
