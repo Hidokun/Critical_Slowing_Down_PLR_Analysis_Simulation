@@ -55,7 +55,7 @@ def generate_trace_examples(output_dir="output"):
     print("Generating trace examples for Figures 1 and 3...")
     
     # --- Figure 1: Single pulse recoveries across G ---
-    G_examples = [0.30, 0.60, 0.85, 0.95, 0.98, 2.35]
+    G_examples = [0.30, 0.60, 0.85, 0.95, 2.35]
     trace_data = []
 
     dt_fig1   = 0.001
