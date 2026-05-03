@@ -10,10 +10,13 @@ __pycache__/
 *.py[cod]
 *$py.class
 
-# Project Output
+# Project Output (generated, not tracked)
 output/
 *.csv
 *.png
+
+# Exception: committed figures for README display
+!figures/*.png
 
 # Paper drafts --
 *.pdf
