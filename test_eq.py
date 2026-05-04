@@ -8,7 +8,7 @@ print(f"Nonlinear DDE Equilibrium: A_current = {model.A_current:.4f}, A* = {mode
 print()
 
 # First-passage diagnostic
-for G in [0.30, 0.60, 0.85, 0.95, 0.98]:
+for G in [0.30, 0.60, 0.85, 0.95,2.35]:
     t, stimulus, pulse_onsets = generate_protocol(G, num_pulses=1)
     model = PLRModel(G, noise_sigma=0.0)
     A = model.simulate(stimulus)
