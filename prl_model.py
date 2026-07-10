@@ -1,6 +1,5 @@
 import numpy as np
 
-
 class PLRModel:
     """
     Nonlinear Longtin-Milton DDE model of the Pupillary Light Reflex.
@@ -18,24 +17,24 @@ class PLRModel:
 
     This ensures the model mathematically conforms to the Lambert W linear theory
     for small perturbations, while saturating physically during large fluctuations.
-    Both the area history and the stimulus history are delayed by delta, so that
-    the retinal flux at the brainstem reflects the physical conduction delay on
-    both the luminance signal and the pupil aperture.
     """
 
-    def __init__(self, G, noise_sigma=0.0, dt=0.001):
+    def __init__(self, G, proc_noise_sigma=0.0, obs_noise_sigma=0.0, dt=0.001):
         self.dt          = dt
         self.delta       = 0.300
         self.tau_iris    = 0.311
-        self.A_star      = 15.0
+        
+        # Hardware Mesopic Lock constraint (aligned to Section 2.1)
+        self.A_star      = 12.0
 
-        self.G           = G
-        self.noise_sigma = noise_sigma
+        self.G                = G
+        self.proc_noise_sigma = proc_noise_sigma  # Internal biological noise
+        self.obs_noise_sigma  = obs_noise_sigma   # CCD camera measurement noise
 
-        # Hill equation parameters
-        self.n     = 4.0
-        self.theta = 15.0
-        self.c     = 2.0 * self.A_star
+        # Longtin-Milton Canonical Parameters (aligned to Section 2.6)
+        self.n     = 2.0
+        self.theta = 12.0
+        self.c     = 420.0
 
         # Derivative of f at equilibrium
         # f'(A) = - c * n * theta^n * A^(n-1) / (theta^n + A^n)^2
@@ -65,8 +64,9 @@ class PLRModel:
         A_delayed = self.history_buffer[self.buffer_idx]
         s_delayed = self.stimulus_buffer[self.buffer_idx]
 
-        if self.noise_sigma > 0:
-            A_delayed += self.noise_sigma * self.A_star * np.random.randn()
+        # 1. PROCESS NOISE (intrinsic mechanical/neural variance before feedback)
+        if self.proc_noise_sigma > 0:
+            A_delayed += self.proc_noise_sigma * self.A_star * np.random.randn()
             A_delayed = max(A_delayed, 0.1)
 
         Phi_delayed = A_delayed * (1.0 + s_delayed)
@@ -82,10 +82,18 @@ class PLRModel:
         self.stimulus_buffer[self.buffer_idx] = stimulus_val
         self.buffer_idx = (self.buffer_idx + 1) % self.N_delay
 
+        # Note: observational noise is not added to the internal state A_current.
         return self.A_current
 
     def simulate(self, stimulus_array):
         areas = np.zeros(len(stimulus_array))
         for i, stim in enumerate(stimulus_array):
             areas[i] = self.step(stim)
+            
+        # 2. OBSERVATIONAL NOISE (CCD camera noise on the final output trace)
+        if self.obs_noise_sigma > 0:
+            noise_array = self.obs_noise_sigma * self.A_star * np.random.randn(len(areas))
+            areas += noise_array
+            areas = np.maximum(areas, 0.1)  # Physical clamp to prevent negative area readings
+            
         return areas

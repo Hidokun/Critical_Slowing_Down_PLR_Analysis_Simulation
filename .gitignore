@@ -9,11 +9,13 @@ ENV/
 __pycache__/
 *.py[cod]
 *$py.class
-
+convert_md_to_docx.py
 # Project Output (generated, not tracked)
 output/
 *.csv
 *.png
+*causal_neuro_ai_synthesis.md
+*preprint_review.md.resolved
 
 # Exception: committed figures for README display
 !figures/*.png

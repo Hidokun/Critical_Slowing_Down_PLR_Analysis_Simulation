@@ -11,7 +11,7 @@ def run_parameter_sweep(output_dir="output"):
     Executes the full G sweep across all noise levels as defined in Section 3.
     """
     print("Starting parameter sweep...")
-    G_values = np.round(np.arange(0.10, 2.38, 0.05), 2)
+    G_values = np.round(np.arange(0.10, 2.30, 0.05), 2)  # Cap just below bifurcation
     sigma_values = [0.0, 0.01, 0.05, 0.10, 0.20]
     
     results = []
@@ -22,8 +22,8 @@ def run_parameter_sweep(output_dir="output"):
             # 1. Generate protocol
             t, stimulus, pulse_onsets = generate_protocol(G, num_pulses=10)
             
-            # 2. Simulate model
-            model = PLRModel(G, noise_sigma=sigma)
+            # 2. Simulate model with strict OBSERVATIONAL noise (camera error)
+            model = PLRModel(G, obs_noise_sigma=sigma)
             A = model.simulate(stimulus)
             
             # 3. Analyze trace
@@ -76,7 +76,7 @@ def generate_trace_examples(output_dir="output"):
     t_shifted = t_raw - t_pre  # zero at stimulus onset
 
     for G in G_examples:
-        model = PLRModel(G=G, noise_sigma=0.0)
+        model = PLRModel(G=G, obs_noise_sigma=0.0)
         A = model.simulate(stimulus_fig1)
         valid_idx = (t_shifted >= -0.5) & (t_shifted <= 12.0)
         for ti, ai in zip(t_shifted[valid_idx], A[valid_idx]):
@@ -94,7 +94,7 @@ def generate_trace_examples(output_dir="output"):
     zero_stimulus = np.zeros_like(t_hippus)
     
     for G in [0.50, 0.97*2.318]:
-        model = PLRModel(G, noise_sigma=0.05)
+        model = PLRModel(G, obs_noise_sigma=0.05)
         A = model.simulate(zero_stimulus)
         
         for ti, ai in zip(t_hippus, A):
