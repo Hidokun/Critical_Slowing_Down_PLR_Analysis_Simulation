@@ -1,149 +1,119 @@
 import numpy as np
 from scipy.optimize import curve_fit
-from scipy.signal import welch, hilbert
-from scipy.special import lambertw
+from scipy.signal import welch, butter, filtfilt
 
-def exponential_recovery(t, epsilon, tau_return, A_star=15.0):
+def constrained_damped_oscillator(t, y0, e, tau, omega):
     """
-    Exponential decay function for fitting the re-dilation curve.
-    A(t) = A* + epsilon * exp(-t / tau_return)
+    4-parameter morphological fit. 
+    Phase is algebraically locked (maximum displacement forced at t=0).
     """
-    return A_star + epsilon * np.exp(-t / tau_return)
-def extract_tau_return(t, A, pulse_onsets, G, pulse_duration=0.200, dt=0.001, A_star=15.0):
-    """
-    Extracts the recovery time constant (tau_return) from simulated PLR traces.
-    Uses Hilbert envelope for oscillatory recoveries (G > 0.5) and direct
-    absolute deviation for monotonic recoveries (G <= 0.5).
-    """
-    tau_iris = 0.311
+    return y0 + e * np.exp(-t / tau) * np.cos(omega * t)
 
-    if G >= 2.318:  # The true Hopf bifurcation is around G=2.318 for tau=0.311
+def extract_tau_return(t, A, pulse_onsets, G, pulse_duration=0.200, dt=0.001, A_star=12.0):
+    if G >= 2.10:
         return np.nan, np.nan, 0
 
-    # Exact theoretical envelope decay using Lambert W function
-    delta = 0.300
-    arg = - (G * delta / tau_iris) * np.exp(delta / tau_iris)
-    W = lambertw(arg, k=0)
-    lam = (W / delta) - (1.0 / tau_iris)
-    alpha = np.real(lam)
-    
-    tau_pred = -1.0 / alpha
-    T_IPI = max(5.0 * tau_pred, 0.5)
+    # 4.0 Hz Butterworth preserves the 1.07 Hz biological envelope
+    fs = 1.0 / dt
+    b, a = butter(2, 4.0, btype='low', fs=fs)
+    padlen = min(3 * max(len(a), len(b)), len(A) - 1)
+    A_smooth = filtfilt(b, a, A, padlen=padlen)
 
     taus = []
-    residuals = []
 
-    for onset in pulse_onsets:
-        t_offset = onset + pulse_duration
-        idx_offset = int(np.round(t_offset / dt))
-
-        t_max_end = t_offset + T_IPI - 0.050
-        idx_max_end = int(np.round(t_max_end / dt))
-        idx_max_end = min(idx_max_end, len(t) - 1)
-        idx_end = idx_max_end
-
-        if (idx_end - idx_offset) * dt < 0.050:
-            continue
-
-        t_fit = t[idx_offset:idx_end] - t[idx_offset]
-        A_fit = A[idx_offset:idx_end]
-        A_zero_mean = A_fit - A_star
-
-        zero_crossings = np.where(np.diff(np.sign(A_zero_mean)))[0]
-
-        if len(zero_crossings) >= 2:
-            envelope = np.abs(hilbert(A_zero_mean))
-            # Hilbert transform has edge artifacts, so clip the last 10%
-            clip_idx = int(len(envelope) * 0.9)
-            t_fit = t_fit[:clip_idx]
-            A_fit = A_fit[:clip_idx]
-            envelope = envelope[:clip_idx]
-            mse_threshold = 0.1
+    for i, onset in enumerate(pulse_onsets):
+        if i + 1 < len(pulse_onsets):
+            end_t = pulse_onsets[i+1] - 0.05
         else:
-            envelope = np.abs(A_zero_mean)
-            mse_threshold = 0.1
+            end_t = t[-1]
+            
+        pre_stim_mask = (t >= onset - 1.0) & (t < onset)
+        if np.any(pre_stim_mask):
+            empirical_baseline = np.mean(A[pre_stim_mask])
+        else:
+            empirical_baseline = A_star
 
-        # Find the minimum of A_fit (constriction nadir) and start fitting from there
-        nadir_idx = np.argmin(A_fit)
-        if nadir_idx > 5:
-            t_fit = t_fit[nadir_idx:] - t_fit[nadir_idx]
-            envelope = envelope[nadir_idx:]
+        window_mask = (t >= onset) & (t < end_t)
+        t_window = t[window_mask]
+        A_raw_window = A[window_mask]
+        A_smooth_window = A_smooth[window_mask]
 
-        if envelope[0] < 0.05:
+        if len(t_window) < 100:
             continue
 
-        epsilon_guess = float(np.clip(envelope[0], 1e-5, A_star))
-        tau_guess = float(np.clip(tau_pred, 1e-4, 59.9))
-        p0 = [epsilon_guess, tau_guess]
-        bounds = ([1e-5, 1e-5], [A_star * 2.0, 60.0])
+        search_mask = (t_window - onset) <= 1.5
+        if not np.any(search_mask):
+            continue
+            
+        peak_idx = np.argmin(A_smooth_window[search_mask])
+        t_peak = t_window[peak_idx]
+
+        redil_mask = (t_window >= t_peak)
+        t_fit = t_window[redil_mask] - t_peak  
+        A_raw_fit = A_raw_window[redil_mask]
+        A_smooth_fit = A_smooth_window[redil_mask] 
+
+        if len(t_fit) < 50:
+            continue
 
         try:
-            fit_func = lambda t_val, eps, tau: eps * np.exp(-t_val / tau)
-            popt, _ = curve_fit(fit_func, t_fit, envelope,
-                                p0=p0, bounds=bounds, maxfev=8000)
-            eps_fit, tau_fit = popt
+            displacement = np.min(A_raw_fit) - empirical_baseline
+            
+            p0_guess = [empirical_baseline, displacement, 1.0, 6.7]
+            
+            # Restore the broad, honest physical bounds
+            bounds_strict = (
+                [empirical_baseline - 0.2, -np.inf, 0.05, 3.0], 
+                [empirical_baseline + 0.2, 0.0, 15.0, 10.0]
+            )
+            
+            # STEP 1: Guided Initializer with tuned armor
+            popt_guess, _ = curve_fit(
+                constrained_damped_oscillator, 
+                t_fit, 
+                A_smooth_fit, 
+                p0=p0_guess, 
+                bounds=bounds_strict, 
+                method='trf',
+                loss='soft_l1',
+                f_scale=0.1,  # Forces robust rejection of noise-induced wobbles
+                maxfev=5000
+            )
+            
+            tau_guide = popt_guess[2]
+            omega_guide = popt_guess[3]
 
-            env_pred = fit_func(t_fit, eps_fit, tau_fit)
-            mse = np.mean((envelope - env_pred) ** 2)
-
-            if mse < mse_threshold:
-                taus.append(tau_fit)
-                residuals.append(mse)
-
+            # STEP 2: The Exact Extraction with tuned armor
+            p0_exact = [empirical_baseline, displacement, tau_guide, omega_guide]
+            
+            popt_exact, _ = curve_fit(
+                constrained_damped_oscillator, 
+                t_fit, 
+                A_raw_fit, 
+                p0=p0_exact, 
+                bounds=bounds_strict, 
+                method='trf',
+                loss='soft_l1',
+                f_scale=0.1,  # The master key. Rejects CCD static unconditionally.
+                maxfev=5000
+            )
+            
+            taus.append(popt_exact[2])
+            
         except RuntimeError:
-            continue
+            pass
 
-    if len(taus) == 0:
+    if len(taus) > 0:
+        return np.mean(taus), np.std(taus), len(taus)
+    else:
         return np.nan, np.nan, 0
 
-    return np.mean(taus), np.std(taus), len(taus)
-
-
-def detect_hippus(t, A, fs=1000.0, threshold_power=0.1):
-    """
-    Detects spontaneous pupillary oscillations (hippus) using power spectral density.
-    Identifies if sustained spectral power in the 1-3 Hz band exceeds a threshold.
-    
-    Parameters:
-        t (np.ndarray): Time vector.
-        A (np.ndarray): Pupil area vector.
-        fs (float): Sampling frequency in Hz (default 1000.0 for dt=1ms).
-        threshold_power (float): Minimum power to classify as hippus state.
-        
-    Returns:
-        is_hippus (bool): True if hippus detected.
-        band_power (float): Integrated power in the 1-3 Hz band.
-    """
-    # Remove mean to avoid massive DC component
+def detect_hippus(t, A, fs=1000.0, nperseg=4000):
     A_zero_mean = A - np.mean(A)
-    
-    # Compute PSD using Welch's method
-    # nperseg defines the frequency resolution. 4 seconds gives 0.25 Hz resolution.
-    nperseg = int(4.0 * fs)
-    if len(A_zero_mean) < nperseg:
-        nperseg = len(A_zero_mean)
-        
     freqs, psd = welch(A_zero_mean, fs, nperseg=nperseg)
-    
-    # Integrate power in the 1 to 3 Hz band
-    band_mask = (freqs >= 1.0) & (freqs <= 3.0)
-    band_power = np.trapezoid(psd[band_mask], freqs[band_mask])
-    
-    is_hippus = bool(band_power > threshold_power)
-    
-    return is_hippus, band_power
-
-
-def compute_pipr(A_baseline_mean, A_post_mean):
-    """
-    Computes the Post-Illumination Pupil Response (PIPR) differential metric.
-    R = ((A_PIPR - A0) / A0) * 100%
-    
-    Parameters:
-        A_baseline_mean (float): Mean area over 2s pre-stimulus window (A0).
-        A_post_mean (float): Mean area over 5-7s post-stimulus window (A_PIPR).
-        
-    Returns:
-        R (float): Normalized percentage change.
-    """
-    return ((A_post_mean - A_baseline_mean) / A_baseline_mean) * 100.0
+    band_mask = (freqs >= 0.1) & (freqs <= 5.0)
+    valid_psd = psd[band_mask]
+    if len(valid_psd) == 0:
+        return False, 0.0
+    peak_power = np.max(valid_psd)
+    return peak_power > 0.5, peak_power

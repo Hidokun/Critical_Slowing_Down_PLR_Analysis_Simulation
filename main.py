@@ -5,13 +5,14 @@ import pandas as pd
 from prl_model import PLRModel
 from stimulus import generate_protocol
 from analysis import extract_tau_return, detect_hippus
+from figures import plot_figure_1, plot_figure_2, plot_figure_4
 
 def run_parameter_sweep(output_dir="output"):
     """
     Executes the full G sweep across all noise levels as defined in Section 3.
     """
     print("Starting parameter sweep...")
-    G_values = np.round(np.arange(0.10, 2.30, 0.05), 2)  # Cap just below bifurcation
+    G_values = np.round(np.arange(0.10, 2.30, 0.05), 2)  # Sweep up to 0.99*Gc = 2.295 per Section 3.2
     sigma_values = [0.0, 0.01, 0.05, 0.10, 0.20]
     
     results = []
@@ -26,8 +27,8 @@ def run_parameter_sweep(output_dir="output"):
             model = PLRModel(G, obs_noise_sigma=sigma)
             A = model.simulate(stimulus)
             
-            # 3. Analyze trace
-            tau_mean, tau_std, valid_fits = extract_tau_return(t, A, pulse_onsets, G)
+            # 3. Analyze trace (Explicitly pass pulse_duration to sync the dynamic window)
+            tau_mean, tau_std, valid_fits = extract_tau_return(t, A, pulse_onsets, G, pulse_duration=0.200)
             is_hippus, band_power = detect_hippus(t, A)
             
             # 4. Store results
@@ -46,23 +47,21 @@ def run_parameter_sweep(output_dir="output"):
     df_results.to_csv(output_path, index=False)
     print(f"Parameter sweep complete. Results saved to {output_path}")
 
-
 def generate_trace_examples(output_dir="output"):
     """
-    Generates specific, isolated traces for Figure 1 (time domain transitions)
-    and Figure 3 (spectral/hippus emergence).
+    Generates specific, isolated traces for Figure 1.
     """
-    print("Generating trace examples for Figures 1 and 3...")
+    print("Generating trace examples for Figure 1...")
     
     # --- Figure 1: Single pulse recoveries across G ---
-    G_examples = [0.30, 0.60, 0.85, 0.95, 2.35]
+    G_examples = [0.15,0.30,0.85,1.20,1.70,2.10, 2.35]
     trace_data = []
 
     dt_fig1   = 0.001
     t_pre     = 1.0    # 1 s baseline before pulse
     pulse_dur = 0.200
     t_post    = 12.0   # 12 s post-pulse — captures G=0.98 recovery
-    stim_amp  = 0.3    # matches intensity in generate_protocol
+    stim_amp  = 0.3   # matches intensity in generate_protocol
 
     n_pre   = int(t_pre / dt_fig1)
     n_pulse = int(pulse_dur / dt_fig1)
@@ -86,25 +85,7 @@ def generate_trace_examples(output_dir="output"):
     trace_path = os.path.join(output_dir, "fig1_traces.csv")
     df_traces.to_csv(trace_path, index=False)
 
-    # --- Figure 3: Spontaneous Hippus (Oscillatory regime) ---
-    # Simulate a 60-second window with ambient noise (sigma=0.05), NO stimulus
-    hippus_data = []
-    dt = 0.001
-    t_hippus = np.arange(0, 60.0, dt)
-    zero_stimulus = np.zeros_like(t_hippus)
-    
-    for G in [0.50, 0.97*2.318]:
-        model = PLRModel(G, obs_noise_sigma=0.05)
-        A = model.simulate(zero_stimulus)
-        
-        for ti, ai in zip(t_hippus, A):
-            hippus_data.append({"G": G, "time": ti, "Area": ai})
-            
-    df_hippus = pd.DataFrame(hippus_data)
-    hippus_path = os.path.join(output_dir, "fig3_hippus_traces.csv")
-    df_hippus.to_csv(hippus_path, index=False)
-    
-    print(f"Trace examples complete. Results saved to {trace_path} and {hippus_path}")
+    print(f"Trace examples complete. Results saved to {trace_path}")
 
 if __name__ == "__main__":
     output_dir = "output"
@@ -113,3 +94,9 @@ if __name__ == "__main__":
         
     run_parameter_sweep(output_dir)
     generate_trace_examples(output_dir)
+
+    print("Generating figures...")
+    plot_figure_1(output_dir)
+    plot_figure_2(output_dir)
+    plot_figure_4(output_dir)
+    print("Figure generation complete.")
