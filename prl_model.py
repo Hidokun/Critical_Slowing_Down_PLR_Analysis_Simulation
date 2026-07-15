@@ -106,11 +106,11 @@ class PLRModel:
             
             # 4. OBSERVATIONAL NOISE (CCD camera noise on the final output trace)
         if self.obs_noise_sigma > 0:
-            # The CCD array spatial integration suppresses area variance by 1/sqrt(N_pixels)
-            # Assuming a standard 400-pixel effective measurement area
-            N_pixels = 400.0
-            noise_array = (self.obs_noise_sigma / np.sqrt(N_pixels)) * self.A_star * np.random.randn(len(areas))
+            # 4. OBSERVATIONAL NOISE (Generalized CCD tracking error per Konnik 2014)
+            # The error is a fractional distortion of the mesopic baseline area A_star.
+            # E.g., obs_noise_sigma = 0.05 means the sensor variance is 5% of A_star.
+            noise_array = self.obs_noise_sigma * self.A_star * np.random.randn(len(areas))
             areas += noise_array
-            areas = np.maximum(areas, 0.1)  # Physical clamp    
+            areas = np.maximum(areas, 0.1) # Physical thermodynamic clamp   
             
         return areas
